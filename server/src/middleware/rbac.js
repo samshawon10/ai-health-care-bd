@@ -1,4 +1,5 @@
 import { isDbConnected } from "../config/db.js";
+import { env } from "../config/env.js";
 import { User } from "../models/User.js";
 
 export const ROLE = {
@@ -31,6 +32,10 @@ function firebaseClientId(req) {
   return req.firebaseUser?.uid || "";
 }
 
+function isBootstrapSuperAdmin(firebaseUser) {
+  return Boolean(firebaseUser?.email && env.superAdminEmails.includes(firebaseUser.email.toLowerCase()));
+}
+
 export async function attachUserContext(req, res, next) {
   if (!req.firebaseUser) {
     req.authUser = null;
@@ -39,42 +44,46 @@ export async function attachUserContext(req, res, next) {
   }
 
   if (!isDbConnected()) {
+    const bootstrapAdmin = isBootstrapSuperAdmin(req.firebaseUser);
     req.authUser = {
       clientId: firebaseClientId(req),
       uid: req.firebaseUser.uid,
       name: req.firebaseUser.name,
       email: req.firebaseUser.email,
       photoURL: req.firebaseUser.photoURL,
-      role: ROLE.PATIENT,
+      role: bootstrapAdmin ? ROLE.SUPER_ADMIN : ROLE.PATIENT,
       status: "active",
       assignedPatientIds: [],
       assignedDoctorIds: [],
       dependentIds: [],
       childProfiles: []
     };
-    req.authRole = ROLE.PATIENT;
+    req.authRole = req.authUser.role;
     return next();
   }
 
   const clientId = firebaseClientId(req);
+  const bootstrapAdmin = isBootstrapSuperAdmin(req.firebaseUser);
+  const update = {
+    $setOnInsert: {
+      clientId,
+      uid: req.firebaseUser.uid,
+      name: req.firebaseUser.name,
+      email: req.firebaseUser.email,
+      photoURL: req.firebaseUser.photoURL,
+      role: bootstrapAdmin ? ROLE.SUPER_ADMIN : ROLE.PATIENT,
+      status: "active"
+    },
+    $set: {
+      uid: req.firebaseUser.uid,
+      email: req.firebaseUser.email,
+      photoURL: req.firebaseUser.photoURL,
+      ...(bootstrapAdmin ? { role: ROLE.SUPER_ADMIN, status: "active" } : {})
+    }
+  };
   const user = await User.findOneAndUpdate(
     { clientId },
-    {
-      $setOnInsert: {
-        clientId,
-        uid: req.firebaseUser.uid,
-        name: req.firebaseUser.name,
-        email: req.firebaseUser.email,
-        photoURL: req.firebaseUser.photoURL,
-        role: ROLE.PATIENT,
-        status: "active"
-      },
-      $set: {
-        uid: req.firebaseUser.uid,
-        email: req.firebaseUser.email,
-        photoURL: req.firebaseUser.photoURL
-      }
-    },
+    update,
     { new: true, upsert: true, runValidators: true }
   ).lean();
 
@@ -90,12 +99,26 @@ export async function attachUserContext(req, res, next) {
   return next();
 }
 
+export function requireAuthenticated(req, res, next) {
+  if (req.authUser) {
+    return next();
+  }
+
+  return res.status(401).json({
+    code: "AUTH_REQUIRED",
+    error: "Authentication is required for this healthcare workspace."
+  });
+}
+
 export function requireRole(...roles) {
   const allowed = new Set(roles);
 
   return function enforceRole(req, res, next) {
     if (!req.authUser) {
-      return next();
+      return res.status(401).json({
+        code: "AUTH_REQUIRED",
+        error: "Authentication is required for this healthcare role."
+      });
     }
 
     if (allowed.has(req.authRole) || (allowed.has(ROLE.SUPER_ADMIN) && isAdminRole(req.authRole))) {

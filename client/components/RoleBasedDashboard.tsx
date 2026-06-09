@@ -86,6 +86,7 @@ export function RoleBasedDashboard({ requiredRole }: { requiredRole?: Normalized
   const [dashboard, setDashboard] = useState<RoleDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -93,6 +94,7 @@ export function RoleBasedDashboard({ requiredRole }: { requiredRole?: Normalized
     try {
       const response = await getRoleDashboard();
       setDashboard(response.dashboard);
+      setWarning(response.warning || "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load role dashboard.");
     } finally {
@@ -107,6 +109,7 @@ export function RoleBasedDashboard({ requiredRole }: { requiredRole?: Normalized
       .then((response) => {
         if (!active) return;
         setDashboard(response.dashboard);
+        setWarning(response.warning || "");
         setError("");
       })
       .catch((loadError) => {
@@ -141,7 +144,7 @@ export function RoleBasedDashboard({ requiredRole }: { requiredRole?: Normalized
   }
 
   return (
-    <RoleShell role={role} name={user?.displayName || dashboard.profile?.name || dashboard.doctor?.name || dashboard.guardian?.name || "Healthcare user"}>
+    <RoleShell role={role} name={user?.displayName || dashboard.profile?.name || dashboard.doctor?.name || dashboard.guardian?.name || "Healthcare user"} warning={warning}>
       {role === "super_admin" ? <AdminDashboard dashboard={dashboard} /> : null}
       {role === "doctor" ? <DoctorDashboard dashboard={dashboard} onRefresh={loadDashboard} /> : null}
       {role === "guardian" ? <GuardianDashboard dashboard={dashboard} onRefresh={loadDashboard} /> : null}
@@ -149,7 +152,7 @@ export function RoleBasedDashboard({ requiredRole }: { requiredRole?: Normalized
   );
 }
 
-function RoleShell({ role, name, children }: { role: NormalizedRole; name: string; children: ReactNode }) {
+function RoleShell({ role, name, warning, children }: { role: NormalizedRole; name: string; warning?: string; children: ReactNode }) {
   return (
     <main className="min-h-screen bg-[linear-gradient(135deg,#eef7ff_0%,#f8fafc_48%,#ecfdf5_100%)] text-slate-950">
       <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -181,6 +184,7 @@ function RoleShell({ role, name, children }: { role: NormalizedRole; name: strin
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">{roleLabels[role]} Dashboard</p>
               <h1 className="mt-1 text-2xl font-black md:text-3xl">Welcome back, {name}</h1>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Secure role-based workspace for Bangladesh healthcare operations.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="focus-within:ring-3 flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
@@ -190,6 +194,7 @@ function RoleShell({ role, name, children }: { role: NormalizedRole; name: strin
               <Button variant="secondary" icon={Bell}>Alerts</Button>
             </div>
           </header>
+          {warning ? <RoleNotice tone="warning" message={warning} /> : null}
           {children}
           <div className="mt-6">
             <MedicalDisclaimer compact />
@@ -197,6 +202,20 @@ function RoleShell({ role, name, children }: { role: NormalizedRole; name: strin
         </section>
       </div>
     </main>
+  );
+}
+
+function RoleNotice({ tone, message }: { tone: "success" | "warning" | "error"; message: string }) {
+  const styles = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    error: "border-rose-200 bg-rose-50 text-rose-800"
+  }[tone];
+
+  return (
+    <p className={`mb-4 rounded-lg border p-3 text-sm font-bold ${styles}`} role={tone === "error" ? "alert" : "status"} aria-live="polite">
+      {message}
+    </p>
   );
 }
 
@@ -222,12 +241,24 @@ function StatGrid({ items }: { items: Array<{ label: string; value: number | str
 
 function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
   const [users, setUsers] = useState<UserProfile[]>(dashboard.recentUsers || []);
-  const [status, setStatus] = useState("");
+  const [notice, setNotice] = useState<{ tone: "success" | "warning" | "error"; message: string } | null>(null);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
 
   const loadUsers = useCallback(async () => {
-    const response = await listPlatformUsers();
-    setUsers(response.users);
+    setUsersLoading(true);
+    setNotice(null);
+    try {
+      const response = await listPlatformUsers();
+      setUsers(response.users);
+      if (response.warning) {
+        setNotice({ tone: "warning", message: response.warning });
+      }
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not load platform users." });
+    } finally {
+      setUsersLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -235,10 +266,15 @@ function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
 
     listPlatformUsers()
       .then((response) => {
-        if (active) setUsers(response.users);
+        if (!active) return;
+        setUsers(response.users);
+        if (response.warning) setNotice({ tone: "warning", message: response.warning });
       })
-      .catch(() => {
-        if (active) setStatus("Could not load platform users.");
+      .catch((error) => {
+        if (active) setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not load platform users." });
+      })
+      .finally(() => {
+        if (active) setUsersLoading(false);
       });
 
     return () => {
@@ -249,13 +285,13 @@ function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
   async function applyAccess(user: UserProfile, role: UserRole, nextStatus: UserStatus) {
     if (!user.clientId) return;
     setSavingId(user.clientId);
-    setStatus("");
+    setNotice(null);
     try {
       const response = await updateUserAccess(user.clientId, { role, status: nextStatus });
       setUsers((current) => current.map((item) => (item.clientId === user.clientId ? response.user : item)));
-      setStatus("User access updated.");
+      setNotice({ tone: "success", message: "User access updated." });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not update user access.");
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not update user access." });
     } finally {
       setSavingId("");
     }
@@ -281,7 +317,7 @@ function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
             </div>
             <Button variant="secondary" icon={UserCog} onClick={() => void loadUsers()}>Refresh</Button>
           </div>
-          {status ? <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm font-bold text-blue-800">{status}</p> : null}
+          {notice ? <div className="mt-3"><RoleNotice tone={notice.tone} message={notice.message} /></div> : null}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-slate-500">
@@ -293,11 +329,15 @@ function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((item) => (
-                  <AdminUserRow key={item.clientId || item.uid || item.email} user={item} saving={savingId === item.clientId} onApply={applyAccess} />
-                ))}
+                {usersLoading ? <AdminTableSkeleton /> : null}
+                {!usersLoading
+                  ? users.map((item) => (
+                      <AdminUserRow key={item.clientId || item.uid || item.email} user={item} saving={savingId === item.clientId} onApply={applyAccess} />
+                    ))
+                  : null}
               </tbody>
             </table>
+            {!usersLoading && users.length === 0 ? <EmptyState title="No users found" body="New Firebase sign-ins will appear here after profile sync." /> : null}
           </div>
         </Card>
 
@@ -320,6 +360,21 @@ function AdminDashboard({ dashboard }: { dashboard: RoleDashboardData }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+function AdminTableSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((item) => (
+        <tr key={item} className="border-b border-slate-100">
+          <td className="py-3"><span className="block h-4 w-40 animate-pulse rounded bg-slate-100" /></td>
+          <td className="py-3"><span className="block h-10 w-28 animate-pulse rounded-lg bg-slate-100" /></td>
+          <td className="py-3"><span className="block h-10 w-28 animate-pulse rounded-lg bg-slate-100" /></td>
+          <td className="py-3"><span className="block h-10 w-20 animate-pulse rounded-lg bg-slate-100" /></td>
+        </tr>
+      ))}
+    </>
   );
 }
 
@@ -368,12 +423,12 @@ function DoctorDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardDat
   const [patientId, setPatientId] = useState(patients[0]?.clientId || "");
   const [noteType, setNoteType] = useState<"note" | "prescription" | "patient_message">("note");
   const [content, setContent] = useState("");
-  const [status, setStatus] = useState("");
+  const [notice, setNotice] = useState<{ tone: "success" | "warning" | "error"; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function submitNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("");
+    setNotice(null);
     setSaving(true);
     try {
       await createClinicalNote({
@@ -383,10 +438,10 @@ function DoctorDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardDat
         content
       });
       setContent("");
-      setStatus("Clinical note saved to the patient record.");
+      setNotice({ tone: "success", message: "Clinical note saved to the patient record." });
       await onRefresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save clinical note.");
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not save clinical note." });
     } finally {
       setSaving(false);
     }
@@ -452,7 +507,7 @@ function DoctorDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardDat
               </select>
             </label>
             <TextArea label="Content" placeholder="Assessment, plan, prescription instructions, or follow-up note..." value={content} onChange={(event) => setContent(event.target.value)} required />
-            {status ? <p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm font-bold text-blue-800">{status}</p> : null}
+            {notice ? <RoleNotice tone={notice.tone} message={notice.message} /> : null}
             <Button loading={saving} disabled={!patientId || content.trim().length < 3} icon={ClipboardList} type="submit">Save note</Button>
           </form>
           <ReportMiniList reports={dashboard.reports || []} />
@@ -464,13 +519,13 @@ function DoctorDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardDat
 
 function GuardianDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardData; onRefresh: () => Promise<void> }) {
   const [form, setForm] = useState({ name: "", age: "", bloodGroup: "", relationship: "Guardian" });
-  const [status, setStatus] = useState("");
+  const [notice, setNotice] = useState<{ tone: "success" | "warning" | "error"; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function submitChild(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    setStatus("");
+    setNotice(null);
     try {
       await createChildProfile({
         name: form.name,
@@ -480,10 +535,10 @@ function GuardianDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardD
         knownConditions: []
       });
       setForm({ name: "", age: "", bloodGroup: "", relationship: "Guardian" });
-      setStatus("Child profile added.");
+      setNotice({ tone: "success", message: "Child profile added." });
       await onRefresh();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not add child profile.");
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not add child profile." });
     } finally {
       setSaving(false);
     }
@@ -518,8 +573,8 @@ function GuardianDashboard({ dashboard, onRefresh }: { dashboard: RoleDashboardD
             <Field label="Age" type="number" min={0} max={18} value={form.age} onChange={(event) => setForm((current) => ({ ...current, age: event.target.value }))} />
             <Field label="Blood group" value={form.bloodGroup} onChange={(event) => setForm((current) => ({ ...current, bloodGroup: event.target.value }))} />
             <Field label="Relationship" value={form.relationship} onChange={(event) => setForm((current) => ({ ...current, relationship: event.target.value }))} />
-            {status ? <p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm font-bold text-blue-800">{status}</p> : null}
-            <Button loading={saving} icon={Plus} type="submit">Add child</Button>
+            {notice ? <RoleNotice tone={notice.tone} message={notice.message} /> : null}
+            <Button loading={saving} disabled={form.name.trim().length < 1} icon={Plus} type="submit">Add child</Button>
           </form>
         </Card>
       </div>

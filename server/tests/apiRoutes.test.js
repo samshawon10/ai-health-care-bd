@@ -79,3 +79,16 @@ test("history endpoint returns empty list when database is unavailable", async (
     server.close();
   }
 });
+
+test("admin user management rejects unauthenticated role access", async () => {
+  const server = await listen(createApp());
+
+  try {
+    const { response, payload } = await request(server, "/api/users/admin/users");
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.code, "AUTH_REQUIRED");
+  } finally {
+    server.close();
+  }
+});

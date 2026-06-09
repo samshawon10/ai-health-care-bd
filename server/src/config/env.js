@@ -23,6 +23,13 @@ function parseOrigins() {
     .filter(Boolean);
 }
 
+function parseList(value = "") {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: parseNumber(process.env.PORT, 5000),
@@ -34,6 +41,7 @@ export const env = {
   firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
   firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY || "",
   firebaseAdminRequired: parseBoolean(process.env.FIREBASE_ADMIN_REQUIRED, process.env.NODE_ENV === "production"),
+  superAdminEmails: parseList(process.env.SUPER_ADMIN_EMAILS || "").map((email) => email.toLowerCase()),
   openaiApiKey: process.env.OPENAI_API_KEY || "",
   openaiModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
   openaiRequestTimeoutMs: parseNumber(process.env.OPENAI_REQUEST_TIMEOUT_MS, 20000),

@@ -9,7 +9,7 @@ import {
 } from "../controllers/userController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { verifyFirebaseAuth } from "../middleware/firebaseAuth.js";
-import { ROLE, attachUserContext, requireRole, requireUserAccess } from "../middleware/rbac.js";
+import { ROLE, attachUserContext, requireAuthenticated, requireRole, requireUserAccess } from "../middleware/rbac.js";
 import { validate } from "../middleware/validate.js";
 import { adminUserAccessSchema, childProfileSchema, profileSchema } from "../validators/schemas.js";
 
@@ -28,7 +28,7 @@ userRoutes.get("/roles", (req, res) =>
 
 userRoutes.use(verifyFirebaseAuth, attachUserContext);
 
-userRoutes.get("/dashboard", asyncHandler(getRoleDashboard));
+userRoutes.get("/dashboard", requireAuthenticated, asyncHandler(getRoleDashboard));
 userRoutes.get("/admin/users", requireRole(ROLE.SUPER_ADMIN), asyncHandler(listUsers));
 userRoutes.patch(
   "/admin/users/:clientId/access",
@@ -44,5 +44,5 @@ userRoutes.post(
   validate(childProfileSchema),
   asyncHandler(createChildProfile)
 );
-userRoutes.get("/profile/:clientId", requireUserAccess("params", "clientId"), asyncHandler(getProfile));
-userRoutes.put("/profile/:clientId", validate(profileSchema), requireUserAccess("params", "clientId"), asyncHandler(upsertProfile));
+userRoutes.get("/profile/:clientId", requireAuthenticated, requireUserAccess("params", "clientId"), asyncHandler(getProfile));
+userRoutes.put("/profile/:clientId", requireAuthenticated, validate(profileSchema), requireUserAccess("params", "clientId"), asyncHandler(upsertProfile));

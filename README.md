@@ -83,6 +83,7 @@ FIREBASE_PROJECT_ID=ai-healthcare-bd
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@ai-healthcare-bd.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 FIREBASE_ADMIN_REQUIRED=false
+SUPER_ADMIN_EMAILS=admin@example.com
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 CLIENT_ORIGIN=http://localhost:3000
@@ -286,6 +287,8 @@ Content-Type: application/json
 - Guardians can access only child profile IDs in `dependentIds` or `childProfiles`.
 - Banned users are blocked by the API.
 - Profile updates cannot self-escalate roles; role/status changes go through admin-only endpoints.
+- `SUPER_ADMIN_EMAILS` is the server-side bootstrap path for the first admin account.
+- Admin/doctor/guardian/profile APIs fail closed when no authenticated Firebase user context is available.
 
 ## Example Workflows
 
@@ -303,6 +306,7 @@ Content-Type: application/json
 - Keep Firebase web config in `client/.env.local` or deployment environment variables, never directly in source files.
 - Enable Firebase authorized domains for every production domain.
 - Set `FIREBASE_ADMIN_REQUIRED=true` in production so API routes reject requests unless Firebase Admin token verification is configured.
+- Set `SUPER_ADMIN_EMAILS` to one or more trusted Firebase account emails before the first admin login, then manage future roles from `/admin`.
 - Keep `OPENAI_SKIP_EMERGENCY_AI=true` unless you explicitly want AI wording for emergency cases.
 - Firebase ID tokens are verified on protected API routes when Admin credentials are configured; RBAC mismatches return `403`.
 
