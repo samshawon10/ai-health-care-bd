@@ -7,6 +7,7 @@ import { env, isProduction } from "./config/env.js";
 import { isDbConnected } from "./config/db.js";
 import { hasFirebaseAdminConfig } from "./config/firebaseAdmin.js";
 import { chatRoutes } from "./routes/chatRoutes.js";
+import { clinicalNoteRoutes } from "./routes/clinicalNoteRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
 import { reportRoutes } from "./routes/reportRoutes.js";
 import { userRoutes } from "./routes/userRoutes.js";
@@ -65,6 +66,7 @@ export function createApp() {
   app.use("/api/health-checks", healthRoutes);
   app.use("/api/chats", chatRoutes);
   app.use("/api/reports", reportRoutes);
+  app.use("/api/clinical-notes", clinicalNoteRoutes);
   app.use("/api/users", userRoutes);
 
   app.use(notFound);

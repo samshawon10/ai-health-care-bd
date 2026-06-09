@@ -1,11 +1,48 @@
 import { Router } from "express";
-import { getProfile, upsertProfile } from "../controllers/userController.js";
+import {
+  createChildProfile,
+  getProfile,
+  getRoleDashboard,
+  listUsers,
+  updateUserAccess,
+  upsertProfile
+} from "../controllers/userController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { requireMatchingFirebaseUser, verifyFirebaseAuth } from "../middleware/firebaseAuth.js";
+import { verifyFirebaseAuth } from "../middleware/firebaseAuth.js";
+import { ROLE, attachUserContext, requireRole, requireUserAccess } from "../middleware/rbac.js";
 import { validate } from "../middleware/validate.js";
-import { profileSchema } from "../validators/schemas.js";
+import { adminUserAccessSchema, childProfileSchema, profileSchema } from "../validators/schemas.js";
 
 export const userRoutes = Router();
 
-userRoutes.get("/profile/:clientId", verifyFirebaseAuth, requireMatchingFirebaseUser("params", "clientId"), asyncHandler(getProfile));
-userRoutes.put("/profile/:clientId", verifyFirebaseAuth, validate(profileSchema), requireMatchingFirebaseUser("params", "clientId"), asyncHandler(upsertProfile));
+userRoutes.get("/roles", (req, res) =>
+  res.json({
+    roles: [
+      { id: ROLE.SUPER_ADMIN, label: "Super Admin" },
+      { id: ROLE.DOCTOR, label: "Doctor" },
+      { id: ROLE.PATIENT, label: "Patient" },
+      { id: ROLE.GUARDIAN, label: "Child Care / Guardian" }
+    ]
+  })
+);
+
+userRoutes.use(verifyFirebaseAuth, attachUserContext);
+
+userRoutes.get("/dashboard", asyncHandler(getRoleDashboard));
+userRoutes.get("/admin/users", requireRole(ROLE.SUPER_ADMIN), asyncHandler(listUsers));
+userRoutes.patch(
+  "/admin/users/:clientId/access",
+  requireRole(ROLE.SUPER_ADMIN),
+  validate(adminUserAccessSchema),
+  asyncHandler(updateUserAccess)
+);
+userRoutes.get("/doctor/dashboard", requireRole(ROLE.DOCTOR), asyncHandler(getRoleDashboard));
+userRoutes.get("/guardian/dashboard", requireRole(ROLE.GUARDIAN, ROLE.CHILD_CARE), asyncHandler(getRoleDashboard));
+userRoutes.post(
+  "/guardian/children",
+  requireRole(ROLE.GUARDIAN, ROLE.CHILD_CARE, ROLE.PATIENT),
+  validate(childProfileSchema),
+  asyncHandler(createChildProfile)
+);
+userRoutes.get("/profile/:clientId", requireUserAccess("params", "clientId"), asyncHandler(getProfile));
+userRoutes.put("/profile/:clientId", validate(profileSchema), requireUserAccess("params", "clientId"), asyncHandler(upsertProfile));

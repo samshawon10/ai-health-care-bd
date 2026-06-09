@@ -201,7 +201,13 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
 
   const patientName = profile.name?.trim() || "Demo Patient";
   const role =
-    profile.role === "doctor" ? "Doctor" : profile.role === "clinic_admin" ? "Clinic Admin" : "Patient";
+    profile.role === "super_admin" || profile.role === "clinic_admin"
+      ? "Super Admin"
+      : profile.role === "doctor"
+        ? "Doctor"
+        : profile.role === "guardian" || profile.role === "child_care"
+          ? "Child Care"
+          : "Patient";
   const currentRisk = guidance?.riskLevel || "Low";
   const emergencyVisible = Boolean(emergency?.isEmergency || guidance?.emergencyRequired);
   const totalInteractions = healthChecks.length + chatSessions.length + reports.length;

@@ -3,6 +3,7 @@ import { isDbConnected } from "../config/db.js";
 import { detectEmergency } from "../services/emergencyService.js";
 import { analyzeReportText } from "../services/openaiService.js";
 import { getStoredProfile } from "../services/profileService.js";
+import { permittedUserFilter } from "../middleware/rbac.js";
 
 export async function analyzeReport(req, res) {
   const { userId, reportText } = req.body;
@@ -10,8 +11,12 @@ export async function analyzeReport(req, res) {
   const profile = await getStoredProfile(userId);
   const aiResult = await analyzeReportText({
     reportText,
-    profile,
-    emergency
+    profile: {
+      ...profile,
+      role: req.authRole || profile.role
+    },
+    emergency,
+    role: req.authRole || profile.role
   });
 
   let record = null;
@@ -59,8 +64,11 @@ export async function listReports(req, res) {
     });
   }
 
-  const userId = req.query.userId || req.firebaseUser?.uid || "guest";
-  const reports = await ReportAnalysis.find({ userId })
+  const requestedUserId = req.query.userId ? String(req.query.userId) : "";
+  const filter = req.authUser
+    ? permittedUserFilter(req, requestedUserId)
+    : { userId: requestedUserId || req.firebaseUser?.uid || "guest" };
+  const reports = await ReportAnalysis.find(filter)
     .sort({ createdAt: -1 })
     .limit(30)
     .lean();

@@ -3,6 +3,7 @@ import { isDbConnected } from "../config/db.js";
 import { detectEmergency } from "../services/emergencyService.js";
 import { answerHealthQuestion } from "../services/openaiService.js";
 import { getStoredProfile } from "../services/profileService.js";
+import { canAccessUserId, permittedUserFilter } from "../middleware/rbac.js";
 
 function makeTitle(message) {
   const compact = message.replace(/\s+/g, " ").trim();
@@ -15,8 +16,12 @@ export async function sendChatMessage(req, res) {
   const profile = await getStoredProfile(userId);
   const aiResult = await answerHealthQuestion({
     message,
-    profile,
-    emergency
+    profile: {
+      ...profile,
+      role: req.authRole || profile.role
+    },
+    emergency,
+    role: req.authRole || profile.role
   });
 
   let session = null;
@@ -89,8 +94,11 @@ export async function listChatSessions(req, res) {
     });
   }
 
-  const userId = req.query.userId || req.firebaseUser?.uid || "guest";
-  const sessions = await ChatSession.find({ userId })
+  const requestedUserId = req.query.userId ? String(req.query.userId) : "";
+  const filter = req.authUser
+    ? permittedUserFilter(req, requestedUserId)
+    : { userId: requestedUserId || req.firebaseUser?.uid || "guest" };
+  const sessions = await ChatSession.find(filter)
     .sort({ updatedAt: -1 })
     .limit(30)
     .lean();
@@ -103,16 +111,16 @@ export async function getChatSession(req, res) {
     return res.status(503).json({ error: "Database is not connected." });
   }
 
-  const filter = { _id: req.params.id };
-  if (req.firebaseUser) {
-    filter.userId = req.firebaseUser.uid;
-  } else if (req.query.userId) {
-    filter.userId = req.query.userId;
-  }
-
-  const session = await ChatSession.findOne(filter).lean();
+  const session = await ChatSession.findById(req.params.id).lean();
   if (!session) {
     return res.status(404).json({ error: "Chat session not found." });
+  }
+
+  if (!(await canAccessUserId(req, session.userId))) {
+    return res.status(403).json({
+      code: "RBAC_RECORD_ACCESS_DENIED",
+      error: "You do not have permission to view this chat session."
+    });
   }
 
   res.json({ session });

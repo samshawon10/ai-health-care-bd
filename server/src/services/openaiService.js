@@ -82,6 +82,24 @@ Safety rules:
 Return only valid JSON matching the provided schema.
 `;
 
+function roleBehavior(role = "patient") {
+  const normalized = role === "child_care" ? "guardian" : role === "clinic_admin" ? "super_admin" : role;
+
+  if (normalized === "doctor") {
+    return "Audience is a doctor. Use concise clinical language, summarize red flags, likely differentials, recommended evaluation, and avoid patient-facing reassurance.";
+  }
+
+  if (normalized === "guardian") {
+    return "Audience is a child caregiver. Use simple child-safety language, highlight when pediatric care is urgent, and remind them to contact a pediatric clinician.";
+  }
+
+  if (normalized === "super_admin") {
+    return "Audience is a system administrator. Do not provide diagnosis. Summarize operational risk and advise routing the case to a qualified clinician.";
+  }
+
+  return "Audience is a patient. Use simple, friendly, non-technical language with clear next steps.";
+}
+
 function compactProfile(profile = {}) {
   return Object.fromEntries(
     Object.entries(profile).filter(([, value]) => {
@@ -186,10 +204,31 @@ function deterministicEmergencyGuidance({ input, emergency }) {
   };
 }
 
-function fallbackGuidance({ input, emergency, mode, reason = "AI service is unavailable." }) {
+function fallbackGuidance({ input, emergency, mode, role = "patient", reason = "AI service is unavailable." }) {
   const bangla = isBangla(input);
   const emergencyRequired = Boolean(emergency?.isEmergency);
   const language = detectLanguage(input);
+  const normalizedRole = role === "child_care" ? "guardian" : role === "clinic_admin" ? "super_admin" : role;
+
+  if (normalizedRole === "super_admin") {
+    return {
+      guidance: {
+        possibleCondition: "Operational healthcare case review",
+        riskLevel: emergencyRequired ? "High" : "Medium",
+        explanation:
+          "This request should be handled as an administrative monitoring event, not as a clinical diagnosis.",
+        recommendation:
+          "Route the case to an assigned clinician, review AI usage logs, and prioritize emergency alerts for follow-up.",
+        emergencyAction: emergencyRequired ? emergencyActionText(false) : "",
+        emergencyRequired,
+        disclaimer:
+          "Administrative AI summaries do not replace professional medical review.",
+        language
+      },
+      source: "fallback",
+      warning: reason
+    };
+  }
 
   if (bangla) {
     return {
@@ -240,8 +279,8 @@ function fallbackGuidance({ input, emergency, mode, reason = "AI service is unav
   };
 }
 
-function normalizeGuidance(guidance, input, emergency, mode) {
-  const fallback = fallbackGuidance({ input, emergency, mode }).guidance;
+function normalizeGuidance(guidance, input, emergency, mode, role) {
+  const fallback = fallbackGuidance({ input, emergency, mode, role }).guidance;
   const riskLevels = new Set(["Low", "Medium", "High"]);
   const languages = new Set(["Bangla", "English", "Mixed"]);
 
@@ -270,7 +309,7 @@ function applyEmergencyOverride(guidance, emergency, input) {
   };
 }
 
-async function createGuidance({ mode, input, profile = {}, emergency }) {
+async function createGuidance({ mode, input, profile = {}, emergency, role = "patient" }) {
   if (emergency?.isEmergency && env.openaiSkipEmergencyAi) {
     return {
       ...deterministicEmergencyGuidance({ input, emergency }),
@@ -286,6 +325,7 @@ async function createGuidance({ mode, input, profile = {}, emergency }) {
       input,
       emergency,
       mode,
+      role,
       reason: "OPENAI_API_KEY is not configured."
     });
     return {
@@ -299,6 +339,8 @@ async function createGuidance({ mode, input, profile = {}, emergency }) {
     user_input: boundedInput.text,
     input_was_truncated: boundedInput.truncated,
     original_input_length: boundedInput.originalLength,
+    request_role: role,
+    role_behavior: roleBehavior(role),
     user_profile: compactProfile(profile),
     deterministic_emergency_detection: {
       isEmergency: Boolean(emergency?.isEmergency),
@@ -342,7 +384,7 @@ async function createGuidance({ mode, input, profile = {}, emergency }) {
     });
 
     const parsed = parseGuidanceResponse(response);
-    const normalized = normalizeGuidance(parsed, input, emergency, mode);
+    const normalized = normalizeGuidance(parsed, input, emergency, mode, role);
 
     return {
       guidance: applyEmergencyOverride(normalized, emergency, input),
@@ -356,6 +398,7 @@ async function createGuidance({ mode, input, profile = {}, emergency }) {
       input,
       emergency,
       mode,
+      role,
       reason: "OpenAI request failed; returned safe fallback guidance."
     });
 
@@ -366,29 +409,32 @@ async function createGuidance({ mode, input, profile = {}, emergency }) {
   }
 }
 
-export async function assessSymptoms({ symptoms, profile = {}, emergency }) {
+export async function assessSymptoms({ symptoms, profile = {}, emergency, role = "patient" }) {
   return createGuidance({
     mode: "symptom_check",
     input: symptoms,
     profile,
-    emergency
+    emergency,
+    role
   });
 }
 
-export async function answerHealthQuestion({ message, profile = {}, emergency }) {
+export async function answerHealthQuestion({ message, profile = {}, emergency, role = "patient" }) {
   return createGuidance({
     mode: "medical_chat",
     input: message,
     profile,
-    emergency
+    emergency,
+    role
   });
 }
 
-export async function analyzeReportText({ reportText, profile = {}, emergency }) {
+export async function analyzeReportText({ reportText, profile = {}, emergency, role = "patient" }) {
   return createGuidance({
     mode: "report_analysis",
     input: reportText,
     profile,
-    emergency
+    emergency,
+    role
   });
 }

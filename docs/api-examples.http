@@ -71,3 +71,51 @@ Content-Type: application/json
   "bloodGroup": "B+",
   "knownConditions": ["asthma"]
 }
+
+### Role Dashboard (requires Firebase ID token in production)
+GET http://localhost:5000/api/users/dashboard
+Authorization: Bearer {{firebase_id_token}}
+
+### Admin: List Users
+GET http://localhost:5000/api/users/admin/users
+Authorization: Bearer {{firebase_id_token}}
+
+### Admin: Assign Doctor Role and Patient Access
+PATCH http://localhost:5000/api/users/admin/users/doctor-user-id/access
+Authorization: Bearer {{firebase_id_token}}
+Content-Type: application/json
+
+{
+  "role": "doctor",
+  "status": "active",
+  "assignedPatientIds": ["patient-user-id"]
+}
+
+### Guardian: Add Child Profile
+POST http://localhost:5000/api/users/guardian/children
+Authorization: Bearer {{firebase_id_token}}
+Content-Type: application/json
+
+{
+  "name": "Demo Child",
+  "age": 7,
+  "bloodGroup": "O+",
+  "knownConditions": ["asthma"],
+  "relationship": "Mother"
+}
+
+### Doctor: Save Clinical Note or Prescription
+POST http://localhost:5000/api/clinical-notes
+Authorization: Bearer {{firebase_id_token}}
+Content-Type: application/json
+
+{
+  "patientId": "patient-user-id",
+  "type": "prescription",
+  "title": "Follow-up prescription",
+  "content": "Doctor-entered prescription and follow-up guidance."
+}
+
+### Doctor/Patient/Guardian: List Clinical Notes
+GET http://localhost:5000/api/clinical-notes?patientId=patient-user-id
+Authorization: Bearer {{firebase_id_token}}

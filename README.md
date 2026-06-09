@@ -1,6 +1,6 @@
 # AI Healthcare Assistant for Bangladesh
 
-A production-ready full-stack healthcare assistant built for the OpenAI Codex Community Challenge. It supports Bangla and English symptom checks, emergency detection, general medical Q&A, report explanation, profile management, and MongoDB-backed history.
+A production-ready full-stack healthcare SaaS platform built for the OpenAI Codex Community Challenge. It supports role-based dashboards for super admins, doctors, patients, and child-care guardians, with Bangla/English AI symptom checks, emergency detection, report explanation, clinical notes, profile management, and MongoDB-backed history.
 
 ## Stack
 
@@ -10,6 +10,19 @@ A production-ready full-stack healthcare assistant built for the OpenAI Codex Co
 - Auth: Firebase Authentication with Google and email/password sign-in
 - AI: OpenAI Responses API with structured JSON output
 - Default model: `gpt-4.1-mini` through `OPENAI_MODEL`
+
+## Role-Based Platform
+
+Roles are stored in the MongoDB user profile and enforced in both the frontend and Express API.
+
+| Role | Dashboard | Capabilities |
+| --- | --- | --- |
+| `super_admin` | `/admin` or `/dashboard` | Manage users, assign roles/status, monitor AI usage, review emergency alerts, inspect system analytics |
+| `doctor` | `/doctor` or `/dashboard` | View assigned patients, review AI symptom/report summaries, save clinical notes and prescriptions |
+| `patient` | `/dashboard` | Use symptom checker, AI chat, report analyzer, emergency guidance, personal history, JSON/PDF exports |
+| `guardian` / `child_care` | `/child-care` or `/dashboard` | Create child profiles, monitor child alerts, view dependent health history |
+
+Legacy `clinic_admin` profiles are treated as admin-compatible for backward compatibility.
 
 ## Features
 
@@ -23,8 +36,13 @@ A production-ready full-stack healthcare assistant built for the OpenAI Codex Co
 - Red alert UI for emergency cases.
 - AI Medical Chat Assistant with conservative safety rules.
 - User dashboard with saved checks, chats, reports, and profile context.
+- Role-based dashboards with separate menus, cards, and workflows for admins, doctors, patients, and guardians.
+- Admin user management table with role/status updates.
+- Doctor clinical-note and prescription storage for assigned patients.
+- Child-care dashboard with multiple dependent profiles.
 - Firebase-protected dashboard routes with Google sign-in, email/password auth, password reset, and secure logout.
 - Report Analyzer for pasted lab-report text.
+- JSON and print-ready PDF data exports.
 - Safe fallback response when `OPENAI_API_KEY` is not configured, so the app can still demonstrate UX and emergency rules.
 - Deterministic emergency guidance can skip the OpenAI call for obvious red-flag symptoms to reduce latency and cost.
 
@@ -117,6 +135,9 @@ Backend: `http://localhost:5000`
 Protected app routes:
 
 - `/dashboard`
+- `/admin`
+- `/doctor`
+- `/child-care`
 - `/symptom-checker`
 - `/medical-reports`
 - `/chat-assistant`
@@ -198,6 +219,81 @@ GET /api/chats?userId=demo-user
 GET /api/reports?userId=demo-user
 ```
 
+### Role Dashboard
+
+```http
+GET /api/users/dashboard
+Authorization: Bearer <firebase-id-token>
+```
+
+The response shape adapts to the authenticated user role: admin analytics, doctor patient queue, guardian child profiles, or patient summary.
+
+### Admin User Management
+
+```http
+GET /api/users/admin/users
+Authorization: Bearer <firebase-id-token>
+```
+
+```http
+PATCH /api/users/admin/users/{clientId}/access
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+
+{
+  "role": "doctor",
+  "status": "active",
+  "assignedPatientIds": ["patient-firebase-uid-1"]
+}
+```
+
+### Guardian Child Profiles
+
+```http
+POST /api/users/guardian/children
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+
+{
+  "name": "Child Name",
+  "age": 7,
+  "bloodGroup": "O+",
+  "knownConditions": ["asthma"],
+  "relationship": "Father"
+}
+```
+
+### Doctor Clinical Notes
+
+```http
+POST /api/clinical-notes
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+
+{
+  "patientId": "assigned-patient-uid",
+  "type": "prescription",
+  "title": "Follow-up prescription",
+  "content": "Prescription and follow-up instructions entered by the doctor."
+}
+```
+
+## RBAC Rules
+
+- Super admins can access all users and analytics.
+- Doctors can access only patients listed in their `assignedPatientIds` or patients that list the doctor in `assignedDoctorIds`.
+- Patients can access only their own records.
+- Guardians can access only child profile IDs in `dependentIds` or `childProfiles`.
+- Banned users are blocked by the API.
+- Profile updates cannot self-escalate roles; role/status changes go through admin-only endpoints.
+
+## Example Workflows
+
+1. Patient signs in with Firebase, opens `/dashboard`, runs an AI symptom check, receives structured guidance, and exports history as JSON/PDF.
+2. Super admin opens `/admin`, reviews emergency alerts, promotes a user to `doctor`, and assigns patient IDs.
+3. Doctor opens `/doctor`, reviews assigned patient AI summaries, and saves a clinical note or prescription.
+4. Guardian opens `/child-care`, creates child profiles, and monitors emergency alerts for linked dependents.
+
 ## Production Readiness
 
 - Set `NODE_ENV=production`.
@@ -208,7 +304,7 @@ GET /api/reports?userId=demo-user
 - Enable Firebase authorized domains for every production domain.
 - Set `FIREBASE_ADMIN_REQUIRED=true` in production so API routes reject requests unless Firebase Admin token verification is configured.
 - Keep `OPENAI_SKIP_EMERGENCY_AI=true` unless you explicitly want AI wording for emergency cases.
-- Firebase ID tokens are verified on user-owned API routes when Admin credentials are configured; UID mismatches return `403`.
+- Firebase ID tokens are verified on protected API routes when Admin credentials are configured; RBAC mismatches return `403`.
 
 ## Tests
 

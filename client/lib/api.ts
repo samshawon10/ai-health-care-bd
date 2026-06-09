@@ -1,13 +1,18 @@
 import type {
+  ChildProfile,
   ChatSession,
+  ClinicalNote,
   EmergencyResult,
   Guidance,
   GuidanceSource,
   HealthCheck,
   ReportAnalysis,
+  RoleDashboardData,
   StorageStatus,
   SystemStatus,
-  UserProfile
+  UserProfile,
+  UserRole,
+  UserStatus
 } from "@/types/health";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -166,6 +171,62 @@ export function saveProfile(clientId: string, profile: UserProfile) {
     method: "PUT",
     body: JSON.stringify(profile)
   });
+}
+
+export function getRoleDashboard() {
+  return request<{ dashboard: RoleDashboardData; storageAvailable?: boolean; warning?: string }>("/users/dashboard");
+}
+
+export function listPlatformUsers(input: { role?: UserRole; status?: UserStatus } = {}) {
+  const params = new URLSearchParams();
+  if (input.role) params.set("role", input.role);
+  if (input.status) params.set("status", input.status);
+  const query = params.toString();
+
+  return request<{ users: UserProfile[]; storageAvailable?: boolean; warning?: string }>(`/users/admin/users${query ? `?${query}` : ""}`);
+}
+
+export function updateUserAccess(
+  clientId: string,
+  input: {
+    role?: UserRole;
+    status?: UserStatus;
+    assignedPatientIds?: string[];
+    assignedDoctorIds?: string[];
+    dependentIds?: string[];
+    specialty?: string;
+    licenseNumber?: string;
+  }
+) {
+  return request<{ user: UserProfile }>(`/users/admin/users/${encodeURIComponent(clientId)}/access`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function createChildProfile(input: Omit<ChildProfile, "childId" | "createdAt" | "updatedAt">) {
+  return request<{ childProfile: ChildProfile; user: UserProfile }>("/users/guardian/children", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function createClinicalNote(input: {
+  patientId: string;
+  type: "note" | "prescription" | "patient_message";
+  title?: string;
+  content: string;
+  status?: "draft" | "sent" | "archived";
+}) {
+  return request<{ note: ClinicalNote }>("/clinical-notes", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listClinicalNotes(patientId?: string) {
+  const query = patientId ? `?patientId=${encodeURIComponent(patientId)}` : "";
+  return request<{ notes: ClinicalNote[]; storageAvailable?: boolean; warning?: string }>(`/clinical-notes${query}`);
 }
 
 export function syncFirebaseProfile(profile: {

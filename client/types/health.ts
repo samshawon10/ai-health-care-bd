@@ -1,5 +1,7 @@
 export type RiskLevel = "Low" | "Medium" | "High";
 export type GuidanceSource = "openai" | "fallback" | "rules";
+export type UserRole = "super_admin" | "doctor" | "patient" | "guardian" | "child_care" | "clinic_admin";
+export type UserStatus = "active" | "pending" | "banned";
 
 export type Guidance = {
   possibleCondition: string;
@@ -49,16 +51,71 @@ export type ReportAnalysis = {
 };
 
 export type UserProfile = {
+  clientId?: string;
   uid?: string;
   name?: string;
   email?: string;
   photoURL?: string;
-  role?: "patient" | "doctor" | "clinic_admin";
+  role?: UserRole;
+  normalizedRole?: "super_admin" | "doctor" | "patient" | "guardian";
+  status?: UserStatus;
+  specialty?: string;
+  licenseNumber?: string;
+  assignedPatientIds?: string[];
+  assignedDoctorIds?: string[];
+  dependentIds?: string[];
+  childProfiles?: ChildProfile[];
   age?: number;
   gender?: string;
   district?: string;
   bloodGroup?: string;
   knownConditions?: string[];
+};
+
+export type ChildProfile = {
+  childId: string;
+  name: string;
+  age?: number;
+  gender?: string;
+  bloodGroup?: string;
+  knownConditions?: string[];
+  relationship?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ClinicalNote = {
+  _id: string;
+  patientId: string;
+  doctorId: string;
+  type: "note" | "prescription" | "patient_message";
+  title: string;
+  content: string;
+  status: "draft" | "sent" | "archived";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RoleDashboardData = {
+  role: "super_admin" | "doctor" | "patient" | "guardian";
+  cards: Record<string, number>;
+  profile?: UserProfile;
+  doctor?: UserProfile;
+  guardian?: UserProfile;
+  recentUsers?: UserProfile[];
+  assignedPatients?: UserProfile[];
+  childProfiles?: ChildProfile[];
+  healthChecks?: HealthCheck[];
+  reports?: ReportAnalysis[];
+  chatSessions?: ChatSession[];
+  clinicalNotes?: ClinicalNote[];
+  recentAlerts?: HealthCheck[];
+  aiUsage?: {
+    totalGenerations: number;
+    healthChecks: number;
+    chatSessions: number;
+    reports: number;
+  };
 };
 
 export type StorageStatus = {

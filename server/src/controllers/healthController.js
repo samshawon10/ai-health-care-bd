@@ -3,6 +3,7 @@ import { isDbConnected } from "../config/db.js";
 import { detectEmergency } from "../services/emergencyService.js";
 import { assessSymptoms } from "../services/openaiService.js";
 import { getStoredProfile } from "../services/profileService.js";
+import { canAccessUserId, permittedUserFilter } from "../middleware/rbac.js";
 
 export async function createHealthCheck(req, res) {
   const { userId, symptoms, age, sex, location } = req.body;
@@ -14,9 +15,11 @@ export async function createHealthCheck(req, res) {
       ...storedProfile,
       age: age ?? storedProfile.age,
       sex: sex || storedProfile.gender,
-      location: location || storedProfile.district
+      location: location || storedProfile.district,
+      role: req.authRole || storedProfile.role
     },
-    emergency
+    emergency,
+    role: req.authRole || storedProfile.role
   });
 
   let record = null;
@@ -69,8 +72,11 @@ export async function listHealthChecks(req, res) {
     });
   }
 
-  const userId = req.query.userId || req.firebaseUser?.uid || "guest";
-  const checks = await HealthCheck.find({ userId })
+  const requestedUserId = req.query.userId ? String(req.query.userId) : "";
+  const filter = req.authUser
+    ? permittedUserFilter(req, requestedUserId)
+    : { userId: requestedUserId || req.firebaseUser?.uid || "guest" };
+  const checks = await HealthCheck.find(filter)
     .sort({ createdAt: -1 })
     .limit(30)
     .lean();
@@ -83,16 +89,16 @@ export async function getHealthCheck(req, res) {
     return res.status(503).json({ error: "Database is not connected." });
   }
 
-  const filter = { _id: req.params.id };
-  if (req.firebaseUser) {
-    filter.userId = req.firebaseUser.uid;
-  } else if (req.query.userId) {
-    filter.userId = req.query.userId;
-  }
-
-  const check = await HealthCheck.findOne(filter).lean();
+  const check = await HealthCheck.findById(req.params.id).lean();
   if (!check) {
     return res.status(404).json({ error: "Health check not found." });
+  }
+
+  if (!(await canAccessUserId(req, check.userId))) {
+    return res.status(403).json({
+      code: "RBAC_RECORD_ACCESS_DENIED",
+      error: "You do not have permission to view this health check."
+    });
   }
 
   res.json({ healthCheck: check });
