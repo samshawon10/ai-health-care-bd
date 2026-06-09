@@ -545,6 +545,57 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
     }
   }
 
+  function handleExportData() {
+    const exportedAt = new Date().toISOString();
+    const exportPayload = {
+      product: "AI Healthcare Assistant",
+      exportVersion: 1,
+      exportedAt,
+      user: {
+        uid: user?.uid || clientId,
+        name: profile.name || "",
+        email: profile.email || "",
+        role: profile.role || "patient",
+        photoURL: profile.photoURL || "",
+        age: profile.age,
+        gender: profile.gender || "",
+        district: profile.district || "",
+        bloodGroup: profile.bloodGroup || "",
+        knownConditions: profile.knownConditions || []
+      },
+      summary: {
+        currentRisk,
+        healthScore,
+        emergencyAlerts: emergencyAlertCount,
+        healthChecks: healthChecks.length,
+        chatSessions: chatSessions.length,
+        reports: reports.length,
+        totalInteractions
+      },
+      data: {
+        healthChecks,
+        chatSessions,
+        reports
+      },
+      safety: {
+        disclaimer: "This AI system does not replace professional medical advice."
+      }
+    };
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+      type: "application/json"
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateStamp = exportedAt.slice(0, 10);
+    link.href = url;
+    link.download = `ai-healthcare-data-export-${dateStamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    addToast("Your healthcare data export has downloaded.");
+  }
+
   const primaryContent = (
     <div className="space-y-5">
       {activeView === "dashboard" ? (
@@ -674,7 +725,15 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
           healthChecksCount={healthChecks.length}
           reportsCount={reports.length}
           totalInteractions={totalInteractions}
-          onSecurityAction={(label) => addToast(`${label} settings are ready for auth integration.`, "warning")}
+          onSecurityAction={(label) =>
+            addToast(
+              label === "Password"
+                ? "Use Forgot password on the sign-in page to reset your password."
+                : "Two-factor authentication can be enabled from Firebase Authentication MFA settings.",
+              "warning"
+            )
+          }
+          onExportData={handleExportData}
         />
       ) : null}
     </div>
@@ -1407,7 +1466,8 @@ function SettingsSection({
   healthChecksCount,
   reportsCount,
   totalInteractions,
-  onSecurityAction
+  onSecurityAction,
+  onExportData
 }: {
   theme: DashboardTheme;
   profile: UserProfile;
@@ -1422,6 +1482,7 @@ function SettingsSection({
   reportsCount: number;
   totalInteractions: number;
   onSecurityAction: (label: string) => void;
+  onExportData: () => void;
 }) {
   return (
     <section className={`rounded-lg border p-5 shadow-xl backdrop-blur-xl ${theme.card}`}>
@@ -1495,13 +1556,16 @@ function SettingsSection({
           <div className={`rounded-lg border p-4 ${theme.input}`}>
             <div className="flex items-center gap-2 text-sm font-black">
               <LockKeyhole className="h-4 w-4 text-blue-500" aria-hidden="true" />
-              Security settings
+              Security and data controls
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <SecurityAction icon={KeyRound} label="Password" onClick={onSecurityAction} />
               <SecurityAction icon={ShieldCheck} label="Two-factor auth" onClick={onSecurityAction} />
-              <SecurityAction icon={Download} label="Data export" onClick={onSecurityAction} />
+              <SecurityAction icon={Download} label="Data export" onClick={onExportData} />
             </div>
+            <p className={`mt-3 text-xs leading-5 ${theme.muted}`}>
+              Data export downloads your saved profile, symptom checks, chats, and report analyses as a JSON file.
+            </p>
           </div>
         </div>
       </div>
