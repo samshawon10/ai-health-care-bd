@@ -55,6 +55,7 @@ import {
   sendChatMessage
 } from "@/lib/api";
 import { logout } from "@/lib/auth";
+import { compactText, formatPdfDate, guidanceBullets, openPrintablePdf, safetyDisclaimer } from "@/lib/pdfExport";
 import type {
   ChatSession,
   EmergencyResult,
@@ -171,6 +172,7 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
   const [chatMessage, setChatMessage] = useState("");
   const [reportText, setReportText] = useState("");
   const [reportFileName, setReportFileName] = useState("");
+  const [latestReportForPdf, setLatestReportForPdf] = useState<ReportAnalysis | null>(null);
   const [guidance, setGuidance] = useState<Guidance | null>(null);
   const [emergency, setEmergency] = useState<EmergencyResult | undefined>();
   const [healthChecks, setHealthChecks] = useState<HealthCheck[]>([]);
@@ -474,12 +476,21 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
     setStatus("");
     setLoading("reports");
     try {
+      const submittedReportText = reportText.trim();
       const response = await analyzeReport({
         userId: clientId,
-        reportText
+        reportText: submittedReportText
       });
       setGuidance(response.guidance);
       setEmergency(response.emergency);
+      setLatestReportForPdf(
+        response.report || {
+          _id: `local-report-${Date.now()}`,
+          reportText: submittedReportText,
+          guidance: response.guidance,
+          createdAt: new Date().toISOString()
+        }
+      );
       if (response.emergency?.isEmergency || response.guidance.emergencyRequired) {
         setEmergencyModalOpen(true);
       }
@@ -578,7 +589,7 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
         reports
       },
       safety: {
-        disclaimer: "This AI system does not replace professional medical advice."
+        disclaimer: safetyDisclaimer
       }
     };
     const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
@@ -593,7 +604,137 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-    addToast("Your healthcare data export has downloaded.");
+    addToast("Your JSON healthcare data export has downloaded.");
+  }
+
+  function handleDownloadReportPdf() {
+    const exportedAt = new Date().toISOString();
+    const draftText = reportText.trim();
+    const selectedReport = latestReportForPdf || reports[0] || null;
+    const sourceText = selectedReport?.reportText || draftText;
+
+    if (!sourceText) {
+      addToast("Analyze or paste a report before downloading a PDF.", "warning");
+      return;
+    }
+
+    const opened = openPrintablePdf({
+      title: "Medical Report Analysis",
+      subtitle: "Plain-language AI explanation for patient review and clinician follow-up.",
+      patientName,
+      exportedAt,
+      sections: [
+        {
+          heading: "Patient profile",
+          rows: [
+            ["Name", profile.name],
+            ["Email", profile.email],
+            ["Role", role],
+            ["District", profile.district],
+            ["Blood group", profile.bloodGroup]
+          ]
+        },
+        {
+          heading: "Report source",
+          rows: [
+            ["Report file", reportFileName || "Manual text input"],
+            ["Analyzed at", selectedReport?.createdAt ? formatPdfDate(selectedReport.createdAt) : "Not analyzed yet"]
+          ],
+          paragraphs: [sourceText]
+        },
+        {
+          heading: "AI explanation",
+          bullets: guidanceBullets(selectedReport?.guidance || null)
+        }
+      ]
+    });
+
+    addToast(
+      opened ? "PDF view opened. Choose Save as PDF in the print dialog." : "Popup blocked. Allow popups and try again.",
+      opened ? "success" : "error"
+    );
+  }
+
+  function handleExportPdf() {
+    const exportedAt = new Date().toISOString();
+    const knownConditions = (profile.knownConditions || []).filter(Boolean).join(", ");
+    const recentChecks = healthChecks.slice(0, 8).map((item) =>
+      [
+        formatPdfDate(item.createdAt),
+        `Risk: ${item.guidance?.riskLevel || "Low"}`,
+        `Symptoms: ${compactText(item.symptoms)}`,
+        `Recommendation: ${compactText(item.guidance?.recommendation || "No recommendation saved.")}`
+      ].join(" | ")
+    );
+    const recentChats = chatSessions.slice(0, 8).map((session) => {
+      const lastGuidance = [...session.messages].reverse().find((message) => message.guidance)?.guidance;
+      return [
+        formatPdfDate(session.updatedAt),
+        `Risk: ${session.lastRiskLevel}`,
+        `Topic: ${compactText(session.title || "Chat session")}`,
+        lastGuidance ? `Recommendation: ${compactText(lastGuidance.recommendation)}` : "No structured guidance saved."
+      ].join(" | ");
+    });
+    const recentReports = reports.slice(0, 8).map((report) =>
+      [
+        formatPdfDate(report.createdAt),
+        `Risk: ${report.guidance?.riskLevel || "Low"}`,
+        `Condition: ${compactText(report.guidance?.possibleCondition || "Report analysis")}`,
+        `Report: ${compactText(report.reportText)}`
+      ].join(" | ")
+    );
+
+    const opened = openPrintablePdf({
+      title: "Healthcare Data Export",
+      subtitle: "Printable summary of saved profile, symptom checks, chats, and medical report analyses.",
+      patientName,
+      exportedAt,
+      sections: [
+        {
+          heading: "Patient profile",
+          rows: [
+            ["UID", user?.uid || clientId],
+            ["Name", profile.name],
+            ["Email", profile.email],
+            ["Role", role],
+            ["Age", profile.age],
+            ["Gender", profile.gender],
+            ["District", profile.district],
+            ["Blood group", profile.bloodGroup],
+            ["Known conditions", knownConditions]
+          ]
+        },
+        {
+          heading: "Health summary",
+          rows: [
+            ["Current risk", currentRisk],
+            ["Health score", `${healthScore}/100`],
+            ["Emergency alerts", emergencyAlertCount],
+            ["Symptom checks", healthChecks.length],
+            ["Chat sessions", chatSessions.length],
+            ["Reports", reports.length],
+            ["Total saved interactions", totalInteractions]
+          ]
+        },
+        {
+          heading: "Recent symptom checks",
+          bullets: recentChecks.length ? recentChecks : ["No saved symptom checks yet."]
+        },
+        {
+          heading: "Recent chat sessions",
+          bullets: recentChats.length ? recentChats : ["No saved chat sessions yet."]
+        },
+        {
+          heading: "Recent medical reports",
+          bullets: recentReports.length ? recentReports : ["No saved report analyses yet."]
+        }
+      ]
+    });
+
+    addToast(
+      opened ? "PDF export opened. Choose Save as PDF in the print dialog." : "Popup blocked. Allow popups and try again.",
+      opened ? "success" : "error"
+    );
   }
 
   const primaryContent = (
@@ -675,7 +816,7 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
             disabled={!canSubmitReport}
             onChange={setReportText}
             onFileNameChange={setReportFileName}
-            onDownloadReport={() => addToast("PDF export is queued for this demo.", "warning")}
+            onDownloadReport={handleDownloadReportPdf}
             onSubmit={submitReport}
           />
           <GuidancePanel guidance={guidance} source={lastSource} darkMode={darkMode} />
@@ -734,6 +875,7 @@ export function HealthcareDashboard({ initialView = "dashboard" }: { initialView
             )
           }
           onExportData={handleExportData}
+          onExportPdf={handleExportPdf}
         />
       ) : null}
     </div>
@@ -1467,7 +1609,8 @@ function SettingsSection({
   reportsCount,
   totalInteractions,
   onSecurityAction,
-  onExportData
+  onExportData,
+  onExportPdf
 }: {
   theme: DashboardTheme;
   profile: UserProfile;
@@ -1483,6 +1626,7 @@ function SettingsSection({
   totalInteractions: number;
   onSecurityAction: (label: string) => void;
   onExportData: () => void;
+  onExportPdf: () => void;
 }) {
   return (
     <section className={`rounded-lg border p-5 shadow-xl backdrop-blur-xl ${theme.card}`}>
@@ -1558,13 +1702,14 @@ function SettingsSection({
               <LockKeyhole className="h-4 w-4 text-blue-500" aria-hidden="true" />
               Security and data controls
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <SecurityAction icon={KeyRound} label="Password" onClick={onSecurityAction} />
               <SecurityAction icon={ShieldCheck} label="Two-factor auth" onClick={onSecurityAction} />
-              <SecurityAction icon={Download} label="Data export" onClick={onExportData} />
+              <SecurityAction icon={Database} label="Export JSON" onClick={onExportData} />
+              <SecurityAction icon={Download} label="Download PDF" onClick={onExportPdf} />
             </div>
             <p className={`mt-3 text-xs leading-5 ${theme.muted}`}>
-              Data export downloads your saved profile, symptom checks, chats, and report analyses as a JSON file.
+              Export JSON for machine-readable backup, or download a print-ready PDF summary for patient records.
             </p>
           </div>
         </div>
