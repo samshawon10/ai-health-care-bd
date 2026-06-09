@@ -1,0 +1,73 @@
+### Health
+GET http://localhost:5000/health
+
+### App Status
+GET http://localhost:5000/api/status
+
+### AI Symptom Checker
+POST http://localhost:5000/api/health-checks
+Content-Type: application/json
+
+{
+  "userId": "demo-user",
+  "symptoms": "I have fever, cough, and body ache for 2 days",
+  "age": 28,
+  "sex": "male",
+  "location": "Dhaka"
+}
+
+### Emergency Detection
+POST http://localhost:5000/api/health-checks
+Content-Type: application/json
+
+{
+  "userId": "demo-user",
+  "symptoms": "আমার বুক ব্যথা এবং শ্বাস নিতে কষ্ট হচ্ছে",
+  "age": 52,
+  "sex": "female",
+  "location": "Chattogram"
+}
+
+### Medical Chat
+POST http://localhost:5000/api/chats
+Content-Type: application/json
+
+{
+  "userId": "demo-user",
+  "message": "What should I do for mild acidity after dinner?"
+}
+
+### Report Analyzer
+POST http://localhost:5000/api/reports/analyze
+Content-Type: application/json
+
+{
+  "userId": "demo-user",
+  "reportText": "Hemoglobin 10.2 g/dL, WBC 7200, Platelet 250000, Fasting blood glucose 7.2 mmol/L"
+}
+
+### History
+GET http://localhost:5000/api/health-checks?userId=demo-user
+
+### Chat History
+GET http://localhost:5000/api/chats?userId=demo-user
+
+### Report History
+GET http://localhost:5000/api/reports?userId=demo-user
+
+### Get Profile
+GET http://localhost:5000/api/users/profile/demo-user
+
+### Save Profile
+PUT http://localhost:5000/api/users/profile/demo-user
+Content-Type: application/json
+
+{
+  "name": "Demo Patient",
+  "email": "demo@example.com",
+  "age": 34,
+  "gender": "female",
+  "district": "Dhaka",
+  "bloodGroup": "B+",
+  "knownConditions": ["asthma"]
+}
